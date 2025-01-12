@@ -14,7 +14,7 @@ function getData(url, extraOptions)
     return UrlFetchApp.fetch(url, options).getContentText();
 }
 
-function convertBody(element)
+function getElementText(element)
 {
     return element.getValue().trim();
 }
@@ -22,7 +22,7 @@ function convertBody(element)
 function convertDateFromPage(element)
 {
     // Example: "Oct 24, 2016 12:26PM" -> "2016-10-24T12:26:00Z"
-    const dateStr = convertBody(element);
+    const dateStr = getElementText(element);
     const dateObj = Utilities.parseDate(dateStr, Session.getScriptTimeZone(),
         "MMM dd, yyyy hh:mmaa");
     return dateObj.toISOString();
@@ -59,14 +59,16 @@ function extractStatusFromElement(element)
     //
     // </div>
 
-    status.status = convertBody(
+    status.status = getElementText(
         xmlcommon.find(content, 'div', 'class', ['readable', 'body']));
 
     // Extract the date and status id
-    var dateIdElement = xmlcommon.find(xmlcommon.find(content, 'span', 'class', ['greyText', 'uitext', 'smallText']), 'a');    if (dateIdElement)
+    var dateIdElement = xmlcommon.find(
+        xmlcommon.find(content, 'span', 'class', ['greyText', 'uitext', 'smallText']), 'a');
+    if (dateIdElement)
     {
         status.date = convertDateFromPage(dateIdElement);
-        status.statusId = xmlcommon.getAttributeValue(dateIdElement,'href').split('/').pop();
+        status.statusId = xmlcommon.getAttributeValue(dateIdElement, 'href').split('/').pop();
     }
 
     // Extract book info (e.g., title, id)
@@ -74,11 +76,11 @@ function extractStatusFromElement(element)
     var bookTitleLink = xmlcommon.find(progressElement, 'a', 'rel', ['nofollow']);
     if (bookTitleLink)
     {
-        status.bookTitle = convertBody(bookTitleLink);
-        status.bookId = xmlcommon.getAttributeValue(bookTitleLink,'href').split('/').pop().split('.')[0];
+        status.bookTitle = getElementText(bookTitleLink);
+        status.bookId = xmlcommon.getAttributeValue(bookTitleLink, 'href').split('/').pop().split('.')[0];
 
         // Extract progress (page or percentage)
-        var progressText = convertBody(progressElement);
+        var progressText = getElementText(progressElement);
         var progressValues = progressText.match(/.* is (?:on page )?(\d*%?) (?:of (\d*) of|done with) .*/);
 
         if (progressValues)
@@ -92,7 +94,8 @@ function extractStatusFromElement(element)
                 status.totalPages = parseInt(progressValues[2]);
                 status.percentage = Math.floor((status.pageNo / status.totalPages) * 100);
             }
-        } else if (progressText.includes('finished'))
+        }
+        else if (progressText.includes('finished'))
         {
             status.percentage = 100;
         } else
@@ -106,55 +109,51 @@ function extractStatusFromElement(element)
 
 function getStatuses(userId)
 {
-    // Get an initial page, so we know how many statuses there are to get
+    // Get an initial page, so we know how many pages there are to get
     const url = statusUrl + userId + '?page=';
     var pageNo = 1;
     var response = getData(url + pageNo);
 
     // The status count should be at the top of the page in this format:
     // "Showing 1-30 of 123"
-    // We only need the total count, so extract it with with regex.
-    var pageCountText = response.match(/Showing \d+-\d+ of (\d+)/);
-    var totalStatusCount = parseInt(pageCountText[1]);
+    const pageCountText = response.match(/Showing \d+-(\d+) of (\d+)/);
+    const pageStatusCount = parseInt(pageCountText[1]);
+    const totalStatusCount = parseInt(pageCountText[2]);
+    const pageCount = Math.ceil(totalStatusCount / pageStatusCount);
 
     var statuses = [];
-    // Iterate til we have all the statuses, or we've failed too many times
-    while (statuses.length < totalStatusCount || pageNo < totalStatusCount)
+    for (pageNo = 1; pageNo < pageCount; pageNo++)
     {
         response = getData(url + pageNo);
 
         // Retrieve the whole list of statuses on this page
-        const pattern = /<form.* action=\"\/user_status\/delete_checked_user_statuses\"([\w\W]+?)<\/form>/gm;
+        const pattern =
+            /<form.* action=\"\/user_status\/delete_checked_user_statuses\"([\w\W]+?)<\/form>/gm;
         var pageStatuses = response.match(pattern);
 
-        // Remove characters/entities XmlService can't handle
+        // Remove characters/entities GAS XmlService can't handle
         pageStatuses = pageStatuses[0].replaceAll("&mdash;", "");
 
         // Extract all statuses from this page
         var doc = XmlService.parse(pageStatuses).getRootElement();
         var statusElements = doc.getChildren("div");
 
+        // Extract the data from each status
         statusElements.forEach(function(element)
         {
             statuses.push(extractStatusFromElement(element));
         });
-
-        pageNo++;
     }
 
     return statuses;
 }
 
-
-function writeStatusesToDisk(statuses)
-{
-    var jsonStr = JSON.stringify(statuses, null, 4);
-    var file = common.updateOrCreateFile(config.backupDir,
-        'goodreads_statuses.json', jsonStr);
-}
-
 function main()
 {
     var statuses = getStatuses(config.userId);
-    writeStatusesToDisk(statuses, config.backupDir);
+
+    // Save as a json file in the indicated Google Drive folder
+    var jsonStr = JSON.stringify(statuses, null, 4);
+    var file = common.updateOrCreateFile(config.backupDir,
+        "goodreads_statuses.json", jsonStr);
 }
