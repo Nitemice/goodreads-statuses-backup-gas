@@ -4,21 +4,34 @@
 
 let xmlcommon = (function()
 {
-    // Basic Selector-like search support
+    function getText(element)
+    {
+        return element.getValue().trim();
+    }
+
+    function getAttributeValue(element, attribute)
+    {
+        const attribObj = element.getAttribute(attribute);
+        // Skip elements without the attribute
+        if (!attribObj)
+        {
+            return null;
+        }
+        return attribObj.getValue();
+    }
+
+    // Basic selector-like search
+    //
     // Based on code from
     // https://sites.google.com/site/scriptsexamples/learn-by-example/parsing-html
     //
-    // Supports:
-    // - array of classes/attribute values
-    //
-    // Need to support:
-    // - pattern matching attribute value
+    // Supports array of attribute values
     //
     // Does not support:
     // - CSS/query selector strings
-    // - comma separated lists of selectors,
-    // - most combinators and separators,
+    // - combinators and separators
     // - pseudo-classes
+    //
     function findAll(element, tag = null, attributeName = null, attributeValues = [])
     {
         // Phase 1: get all descendants, then filter out non-element nodes
@@ -47,7 +60,7 @@ let xmlcommon = (function()
 
                 // If no attribute values were passed,
                 // just the presence of the attribute is a success
-                if (attributeValues.length === 0)
+                if (!attributeValues || attributeValues.length === 0)
                 {
                     return true;
                 }
@@ -66,7 +79,6 @@ let xmlcommon = (function()
         return descendants;
     }
 
-
     function find(element, tag = null, attributeName = null, attributeValues = [])
     {
         const found = findAll(element, tag, attributeName, attributeValues);
@@ -74,21 +86,43 @@ let xmlcommon = (function()
         return found.length > 0 ? found[0] : null;
     }
 
-    function getAttributeValue(element, attribute) {
-        const attribObj = element.getAttribute(attribute);
-        // Skip elements without the attribute
-        if (!attribObj)
+    // Pattern-based selector-like search
+    //
+    // Supports pattern matching attribute value
+    //
+    function findAllPattern(element, tag = null, attributeName, attributePattern)
+    {
+        // Find all the elements that match the tag & attribute name
+        let descendants = findAll(element, tag, attributeName, []);
+
+        // Phase 5: filter on attribute pattern
+        descendants = descendants.filter((descendant) =>
         {
-            return null;
-        }
-        return attribObj.getValue();
+            const attributeList = getAttributeValue(descendant, attributeName)
+                .split(' ').map((x) => x.trim());
+            return attributeList.some(
+                (attribute) => attribute.match(attributePattern));
+        });
+
+        // Phase 6: return new results
+        return descendants;
+    }
+
+    function findPattern(element, tag = null, attributeName, attributePattern)
+    {
+        const found = findAllPattern(element, tag, attributeName, attributePattern);
+        // Return the first element found
+        return found.length > 0 ? found[0] : null;
     }
 
     ///////////////////////////////////////////////////////////////////////////
 
     return {
+        getText,
+        getAttributeValue,
         find,
         findAll,
-        getAttributeValue
+        findPattern,
+        findAllPattern,
     }
 })();

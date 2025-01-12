@@ -14,15 +14,10 @@ function getData(url, extraOptions)
     return UrlFetchApp.fetch(url, options).getContentText();
 }
 
-function getElementText(element)
-{
-    return element.getValue().trim();
-}
-
-function convertDateFromPage(element)
+function getDateAsIso(element)
 {
     // Example: "Oct 24, 2016 12:26PM" -> "2016-10-24T12:26:00Z"
-    const dateStr = getElementText(element);
+    const dateStr = xmlcommon.getText(element);
     const dateObj = Utilities.parseDate(dateStr, Session.getScriptTimeZone(),
         "MMM dd, yyyy hh:mmaa");
     return dateObj.toISOString();
@@ -32,7 +27,8 @@ function extractStatusFromElement(element)
 {
     var status = {};
 
-    // The Goodreads statuses page returns status information in the following format:
+    // The Goodreads statuses page returns status information
+    // in the following format:
     //
     // <USER PHOTO>
     // <CONTENT>
@@ -41,6 +37,7 @@ function extractStatusFromElement(element)
 
     var content = xmlcommon.find(element, 'div', 'class', ['left']);
     // This retrieves an element that should be structured as follows:
+    //
     // <div class="left" style="float: left; width: 495px;">
     //
     //   <span class="uitext greyText inlineblock stacked user_status_header">
@@ -59,49 +56,51 @@ function extractStatusFromElement(element)
     //
     // </div>
 
-    status.status = getElementText(
+    // Extract the user's status comment
+    status.status = xmlcommon.getText(
         xmlcommon.find(content, 'div', 'class', ['readable', 'body']));
 
     // Extract the date and status id
-    var dateIdElement = xmlcommon.find(
-        xmlcommon.find(content, 'span', 'class', ['greyText', 'uitext', 'smallText']), 'a');
-    if (dateIdElement)
-    {
-        status.date = convertDateFromPage(dateIdElement);
-        status.statusId = xmlcommon.getAttributeValue(dateIdElement, 'href').split('/').pop();
-    }
+    var dateIdElement =
+        xmlcommon.findPattern(content, 'a', 'href', '^/user_status/show/');
+    status.date = getDateAsIso(dateIdElement);
+    status.statusId = xmlcommon.getAttributeValue(dateIdElement, 'href')
+        .split('/').pop();
 
     // Extract book info (e.g., title, id)
-    var progressElement = xmlcommon.find(content, 'span', 'class', ['user_status_header']);
-    var bookTitleLink = xmlcommon.find(progressElement, 'a', 'rel', ['nofollow']);
-    if (bookTitleLink)
+    var progressElement =
+        xmlcommon.find(content, 'span', 'class', ['user_status_header']);
+    var bookTitleLink =
+        xmlcommon.findPattern(progressElement, 'a', 'href',
+            '^https://www.goodreads.com/book/show/');
+    status.bookTitle = xmlcommon.getText(bookTitleLink);
+    status.bookId = xmlcommon.getAttributeValue(bookTitleLink, 'href')
+        .split('/').pop().split(/[-.]/)[0];
+
+    // Extract progress (page or percentage)
+    var progressText = xmlcommon.getText(progressElement);
+    var progressValues =
+        progressText.match(/.* is (?:on page )?(\d*%?) (?:of (\d*) of|done with) .*/);
+
+    if (progressValues)
     {
-        status.bookTitle = getElementText(bookTitleLink);
-        status.bookId = xmlcommon.getAttributeValue(bookTitleLink, 'href').split('/').pop().split('.')[0];
-
-        // Extract progress (page or percentage)
-        var progressText = getElementText(progressElement);
-        var progressValues = progressText.match(/.* is (?:on page )?(\d*%?) (?:of (\d*) of|done with) .*/);
-
-        if (progressValues)
+        if (progressValues[1].endsWith('%'))
         {
-            if (progressValues[1].endsWith('%'))
-            {
-                status.percentage = parseInt(progressValues[1].slice(0, -1));
-            } else
-            {
-                status.pageNo = parseInt(progressValues[1]);
-                status.totalPages = parseInt(progressValues[2]);
-                status.percentage = Math.floor((status.pageNo / status.totalPages) * 100);
-            }
-        }
-        else if (progressText.includes('finished'))
-        {
-            status.percentage = 100;
+            status.percentage = parseInt(progressValues[1].slice(0, -1));
         } else
         {
-            status.percentage = 0;
+            status.pageNo = parseInt(progressValues[1]);
+            status.totalPages = parseInt(progressValues[2]);
+            status.percentage =
+                Math.floor((status.pageNo / status.totalPages) * 100);
         }
+    }
+    else if (progressText.includes('finished'))
+    {
+        status.percentage = 100;
+    } else
+    {
+        status.percentage = 0;
     }
 
     return status;
@@ -153,7 +152,7 @@ function main()
     var statuses = getStatuses(config.userId);
 
     // Save as a json file in the indicated Google Drive folder
-    var jsonStr = JSON.stringify(statuses, null, 4);
+    var jsonStr = JSON.stringify(statuses, null, 2);
     var file = common.updateOrCreateFile(config.backupDir,
         "goodreads_statuses.json", jsonStr);
 }
