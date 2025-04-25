@@ -152,7 +152,6 @@ function main()
     var statuses = getStatuses(config.userId);
 
     // Save as a json file in the indicated Google Drive folder
-    var jsonStr = JSON.stringify(statuses, null, 2);
-    var file = common.updateOrCreateFile(config.backupDir,
-        "goodreads_statuses.json", jsonStr);
+    var file = common.updateOrCreateJsonFile(config.backupDir,
+        "goodreads_statuses.json", statuses);
 }
