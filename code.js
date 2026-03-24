@@ -121,7 +121,7 @@ function getStatuses(userId)
     const pageCount = Math.ceil(totalStatusCount / pageStatusCount);
 
     var statuses = [];
-    for (pageNo = 1; pageNo < pageCount; pageNo++)
+    for (pageNo = 1; pageNo <= pageCount; pageNo++)
     {
         response = getData(url + pageNo);
 

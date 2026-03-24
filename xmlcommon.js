@@ -1,6 +1,7 @@
 // Extra XML navigation functionality
 // Using GAS XmlService
-//
+// v1.0.0 - 2025-01-12
+
 
 let xmlcommon = (function()
 {
